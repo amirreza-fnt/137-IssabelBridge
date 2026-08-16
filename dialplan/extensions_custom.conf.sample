@@ -1,0 +1,21 @@
+; Sample Issabel / FreePBX custom dialplan snippets
+; File: /etc/asterisk/extensions_custom.conf
+; Then: asterisk -rx "dialplan reload"
+;
+; --- A) After unanswered IVR / voicemail style recording ---
+; [from-internal-custom]
+; exten => 137-record-noanswer,1,NoOp(137 NO_ANSWER submit)
+;  same => n,MixMonitor(${UNIQUEID}.wav)
+;  same => n,Wait(30)   ; or Playback / Record as you already do
+;  same => n,StopMixMonitor()
+;  same => n,AGI(137-submit-recording.agi,NO_ANSWER)
+;  same => n,Hangup()
+;
+; --- B) Queue answered: on hangup submit ANSWERED ---
+; In hangup handler of the queue bridge, or use MixMonitor with a hangup AGI:
+; exten => h,1,NoOp(137 hangup submit)
+;  same => n,AGI(137-submit-recording.agi,ANSWERED,${MEMBERINTERFACE})
+;  same => n,Hangup()
+;
+; NOTE: Adjust recording path / uniqueid naming to match your MixMonitor/Monitor settings.
+; Employer note: no separate DB/domain — this runs ON Issabel and posts to 137-request.

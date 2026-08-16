@@ -1,0 +1,87 @@
+#!/usr/bin/php -q
+<?php
+/**
+ * Optional AGI: run on hangup after MixMonitor.
+ *
+ * Dialplan example (extensions_custom.conf):
+ *   same => n,MixMonitor(${UNIQUEID}.wav)
+ *   same => n,Set(CALLER_PHONE=${CALLERID(num)})
+ *   same => n,Hangup()
+ *   exten => h,1,AGI(137-submit-recording.agi,NO_ANSWER)
+ *
+ * For answered queue calls set outcome=ANSWERED and pass operator extension as ARG2.
+ */
+declare(strict_types=1);
+
+$agiStdin = fopen('php://stdin', 'r');
+$agiEnv = [];
+while (!feof($agiStdin)) {
+    $line = trim(fgets($agiStdin) ?: '');
+    if ($line === '') {
+        break;
+    }
+    if (strpos($line, ':') !== false) {
+        [$k, $v] = array_map('trim', explode(':', $line, 2));
+        $agiEnv[$k] = $v;
+    }
+}
+
+$outcome = strtoupper($argv[1] ?? 'NO_ANSWER');
+$operatorExt = $argv[2] ?? null;
+$caller = $agiEnv['agi_callerid'] ?? ($agiEnv['agi_calleridname'] ?? '');
+$uniqueId = $agiEnv['agi_uniqueid'] ?? '';
+
+$config = require dirname(__DIR__) . '/config.php';
+$monitor = rtrim($config['monitor_dir'], '/');
+
+// Common Issabel MixMonitor naming patterns — adjust if your system differs
+$candidates = [
+    $monitor . '/' . $uniqueId . '.wav',
+    $monitor . '/' . $uniqueId . '.mp3',
+    $monitor . '/' . date('Y/m/d') . '/' . $uniqueId . '.wav',
+];
+
+$files = [];
+foreach ($candidates as $c) {
+    if (is_file($c)) {
+        $files[] = $c;
+        break;
+    }
+}
+
+if ($files === []) {
+    fwrite(STDERR, "137-AGI: recording not found for uniqueid={$uniqueId}\n");
+    exit(1);
+}
+
+$payload = json_encode([
+    'secret'      => $config['bridge_secret'],
+    'outcome'     => in_array($outcome, ['NO_ANSWER', 'ANSWERED'], true) ? $outcome : 'NO_ANSWER',
+    'callerPhone' => $caller,
+    'operatorExt' => $operatorExt,
+    'files'       => $files,
+], JSON_UNESCAPED_UNICODE);
+
+// Call local HTTP endpoint (same machine) so logic stays in one place
+$bridgeUrl = getenv('BRIDGE_SUBMIT_URL') ?: 'http://127.0.0.1/137-bridge/api/submit-recording.php';
+$ch = curl_init($bridgeUrl);
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POST           => true,
+    CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+    CURLOPT_POSTFIELDS     => $payload,
+    CURLOPT_TIMEOUT        => 60,
+]);
+$body = curl_exec($ch);
+$code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+
+$json = json_decode((string)$body, true);
+$tracking = is_array($json) ? ($json['trackingCode'] ?? '') : '';
+
+// Set channel var for possible TTS playback before hangup (if used mid-call)
+fwrite(STDOUT, "SET VARIABLE TRACKING_CODE \"{$tracking}\"\n");
+fgets($agiStdin);
+
+fwrite(STDERR, "137-AGI: HTTP {$code} tracking={$tracking} body={$body}\n");
+exit($code >= 200 && $code < 300 ? 0 : 1);

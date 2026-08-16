@@ -1,0 +1,5 @@
+/config.php
+*.wav
+*.mp3
+.idea/
+.vscode/
