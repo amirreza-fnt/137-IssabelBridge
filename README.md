@@ -1,108 +1,86 @@
-# 137 Issabel Bridge — ضبط خودکار و ارتباط با میکروسرویس ثبت درخواست
+# 137 Issabel Bridge — AGI drop-in for موجودی ایزابل
 
-> مطابق حرف کارفرما: **دامنه و دیتابیس جدا ندارد**. روی خود **ایزابل** نصب می‌شود و فقط به `137-request` + سرویس `files` HTTP می‌زند. لاگ جدا / Job جدا لازم نیست؛ تاریخچه در همان ثبت درخواست می‌ماند.
+> کارفرما: دامنه/DB جدا ندارد. همان فایل‌های AGI روی ایزابل (`/var/lib/asterisk/agi-bin`) دستکاری می‌شوند.
 
-## جریان
+## فایل‌های قدیمی پیدا‌شده روی Issabel (`192.168.1.70`)
 
-```
-سانترال Issabel (MixMonitor)
-        │
-        ▼
-PHP bridge روی ایزابل
-  1) prepare-upload + upload  →  files service  → fileId
-  2) POST /api/v1/requests    →  137-request (channel=PhoneCall, X-Api-Key)
-        │
-        ▼
-trackingCode  (کد یکتا 137-…)
-```
-
-| سناریو تسک | outcome | فایل‌ها |
+| فایل | Exten / استفاده | قبلاً |
 |---|---|---|
-| عدم پاسخ | `NO_ANSWER` | یک فایل ضبط شهروند |
-| پاسخ (شهروند + اپراتور) | `ANSWERED` | یک یا دو فایل (in/out یا mixed) |
-| رد/پاسخ از نرم‌افزار اپراتور | `call-control.php` → AMI Hangup / Redirect | — |
+| `137record.php` | `138` | SOAP `AddVoiceMessageWithSend2` + `MessageFileBase64` |
+| `137no_oprtator.php` | `140` | همان (بدون اپراتور) |
+| `137queue.php` | Queue `8002` hangup | SOAP `AddAgentCall` + `AttachVoiceFilePath` |
+| `137_Pay.php` | `139` | SOAP `Tracking` |
+
+SOAP قدیمی: `http://192.168.1.42:8090/service/asterisk/asterisk.asmx`
+
+## جایگزین جدید
+
+همان نام فایل‌ها در `agi-bin/` + کتابخانه `137_bridge.php`:
+
+1. `sox` → wav 16-bit  
+2. `POST files/prepare-upload` + `upload` → `fileId`  
+3. `POST /api/v1/requests` کانال `PhoneCall` → **`trackingCode`**  
+4. پخش کد با `say_digits`
+
+Dialplan فعلی **عوض نمی‌شود** (همان AGI نام‌ها).
 
 ## نصب روی ایزابل
 
 ```bash
-# روی سرور Issabel
-sudo mkdir -p /var/www/html/137-bridge
-sudo cp -r api lib agi dialplan config.example.php /var/www/html/137-bridge/
-cd /var/www/html/137-bridge
-sudo cp config.example.php config.php
-sudo nano config.php   # آدرس‌ها، api_key، AMI، bridge_secret
+# از لپ‌تاپ / گیت
+cd /tmp
+git clone https://github.com/amirreza-fnt/137-IssabelBridge.git
+cd 137-IssabelBridge
 
-sudo cp agi/137-submit-recording.agi /var/lib/asterisk/agi-bin/
-sudo chmod +x /var/lib/asterisk/agi-bin/137-submit-recording.agi
-sudo chown asterisk:asterisk /var/lib/asterisk/agi-bin/137-submit-recording.agi
+# بکاپ فایل‌های فعلی
+sudo cp /var/lib/asterisk/agi-bin/137record.php /var/lib/asterisk/agi-bin/137record.php.bak.$(date +%Y%m%d)
+sudo cp /var/lib/asterisk/agi-bin/137no_oprtator.php /var/lib/asterisk/agi-bin/137no_oprtator.php.bak.$(date +%Y%m%d)
+sudo cp /var/lib/asterisk/agi-bin/137queue.php /var/lib/asterisk/agi-bin/137queue.php.bak.$(date +%Y%m%d)
+sudo cp /var/lib/asterisk/agi-bin/137_Pay.php /var/lib/asterisk/agi-bin/137_Pay.php.bak.$(date +%Y%m%d)
+
+# کپی اسکریپت‌ها
+sudo cp agi-bin/137_bridge.php agi-bin/137record.php agi-bin/137no_oprtator.php \
+        agi-bin/137queue.php agi-bin/137_Pay.php \
+        /var/lib/asterisk/agi-bin/
+
+sudo cp agi-bin/137-bridge.config.example.php /etc/asterisk/137-bridge.php
+sudo nano /etc/asterisk/137-bridge.php
+# → files_base_url و request_base_url را به IP سرور AlmaLinux درست کن
+
+sudo chmod +x /var/lib/asterisk/agi-bin/137*.php
+sudo chown asterisk:asterisk /var/lib/asterisk/agi-bin/137*.php /etc/asterisk/137-bridge.php
 ```
 
-Apache باید به `/var/www/html/137-bridge/api/` سرو بدهد (پیش‌فرض Issabel همین است).
-
-### تنظیم `config.php`
-
-| کلید | معنی |
-|---|---|
-| `files_base_url` | آدرس سرویس فایل از دید ایزابل (مثلاً `http://IP:6000`) |
-| `request_base_url` | آدرس 137-request (مثلاً `http://IP:5006` یا `https://apiweb-137request.sabzevar.ir:5007`) |
-| `api_key` | همان `dev-internal-key-137` / کلید Telephony |
-| `monitor_dir` | معمولاً `/var/spool/asterisk/monitor` |
-| `ami.*` | از `/etc/asterisk/manager.conf` |
-
-ایزابل باید به پورت‌های files و request **شبکه‌ای** دسترسی داشته باشد (firewall).
-
-## تست دستی
+### تست شبکه از روی ایزابل
 
 ```bash
-# عدم پاسخ
-curl -s -X POST http://127.0.0.1/137-bridge/api/submit-recording.php \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "secret":"change-me-issabel-bridge",
-    "outcome":"NO_ANSWER",
-    "callerPhone":"09120000000",
-    "files":["/var/spool/asterisk/monitor/TEST.wav"]
-  }'
-
-# پاسخ
-curl -s -X POST http://127.0.0.1/137-bridge/api/submit-recording.php \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "secret":"change-me-issabel-bridge",
-    "outcome":"ANSWERED",
-    "callerPhone":"09120000000",
-    "operatorExt":"1001",
-    "files":["/path/citizen.wav","/path/operator.wav"]
-  }'
-
-# رد تماس از اپراتور
-curl -s -X POST http://127.0.0.1/137-bridge/api/call-control.php \
-  -H 'Content-Type: application/json' \
-  -d '{"secret":"change-me-issabel-bridge","action":"reject","channel":"SIP/xxxx-00000001"}'
+curl -s http://192.168.1.12:5006/health
+curl -s http://192.168.1.12:6000/health   # یا پورت واقعی files
 ```
 
-پاسخ موفق submit:
+اگر health نداد، firewall روی AlmaLinux را باز کن یا URL را در `137-bridge.php` اصلاح کن.
 
-```json
-{ "ok": true, "requestId": "...", "trackingCode": "137-14050525-000001", "outcome": "NO_ANSWER" }
+### تست تماس
+
+- `138` / `140` → باید کد پیگیری خوانده شود  
+- صف `8002` بعد از Hangup → در `asterisk -rvvv` لاگ `137queue tracking=...`
+
+```bash
+asterisk -rvvv
+# یا
+tail -f /var/log/asterisk/full | grep 137
 ```
 
-## Dialplan
+## رابطه با میکروسرویس‌ها
 
-نمونه‌ها در `dialplan/extensions_custom.conf.sample` — باید با مسیر واقعی MixMonitor روی ایزابل شما منطبق شود.
+| سرویس | نقش |
+|---|---|
+| **files** | ذخیره صوت |
+| **137-request** | ساخت درخواست `PhoneCall` + `trackingCode` + لاگ |
+| **137-Referral** | بعد از create در صورت bootstrap (سمت request) |
 
-## داده لازم از سرور ایزابل (اگر داری بفرست)
+تغییر اجباری در کد request/files برای این تسک لازم نیست (مگر استعلام رهگیری `137_Pay` که فعلاً stub است تا `GET by-tracking-code` پیاده شود).
 
-1. اگر فایل PHP قبلی روی ایزابل هست → همان را بفرست (کارفرما گفت شاید فقط دستکاری همان باشد)
-2. مسیر واقعی ضبط‌ها (`ls /var/spool/asterisk/monitor | head`)
-3. نمونه نام فایل MixMonitor برای یک تماس
-4. بخش `[xxxxx]` از `/etc/asterisk/manager.conf` (user/secret AMI) — پسورد را در چت عمومی نگذار، در `config.php` محلی بگذار
-5. از روی ایزابل: آیا `curl http://<request-host>:5006/health` و پورت files جواب می‌دهد؟
-6. IP/URL نهایی که ایزابل باید به files و request بزند
+## نکته
 
-## ارتباط با 137-request
-
-- کانال: `PhoneCall`
-- Auth: `X-Api-Key`
-- فایل‌ها فقط به‌صورت `fileIds` (اول آپلود در files)
-- کد یکتا: فیلد `trackingCode` در پاسخ 201
+`137record.php` فعلی روی سرور با `exit` وسط دیباگ قطع شده بود؛ نسخه ریپو آن را درست کرده و به REST وصل می‌کند.
