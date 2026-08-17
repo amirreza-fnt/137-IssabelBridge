@@ -42,13 +42,16 @@ final class Bridge137
         return $p !== '' ? $p : null;
     }
 
-    /** Convert Asterisk .WAV (often gsm/ulaw) to 16-bit wav via sox. */
+    /** Convert Asterisk .WAV (often gsm/ulaw) to standard PCM wav via sox. */
     public function soxToWav16(string $srcWav, string $destWav): void
     {
-        $cmd = 'sox ' . escapeshellarg($srcWav) . ' -b 16 ' . escapeshellarg($destWav) . ' 2>/dev/null';
-        shell_exec($cmd);
+        // Force RIFF/WAVE PCM so files-service magic-number check accepts it.
+        $cmd = 'sox ' . escapeshellarg($srcWav)
+            . ' -t wav -b 16 -e signed-integer -r 8000 -c 1 '
+            . escapeshellarg($destWav) . ' 2>&1';
+        $out = shell_exec($cmd);
         if (!is_file($destWav) || filesize($destWav) <= 0) {
-            throw new RuntimeException("sox failed: {$srcWav} → {$destWav}");
+            throw new RuntimeException("sox failed: {$srcWav} → {$destWav} out={$out}");
         }
     }
 
