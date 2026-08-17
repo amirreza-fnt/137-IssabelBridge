@@ -8,7 +8,9 @@
  * Files: storage.sabzevar.ir (or deploy filestorage on AlmaLinux :6000 behind nginx).
  */
 return [
-    'files_base_url'   => 'https://storage.sabzevar.ir',
+    'files_base_url'   => 'https://192.168.1.13:6001',
+    // URL the employer's browser uses to play recordings (can differ from files_base_url).
+    'files_public_base_url' => 'https://192.168.1.13:6001',
     'request_base_url' => 'https://apiweb-137request.sabzevar.ir:5007',
 
     'api_key'          => 'dev-internal-key-137',

@@ -21,7 +21,7 @@ final class FilesClient
      * @return array{fileId:string, shortCode:?string, url:?string}
      */
     /** @param int|string $accessType TokenProtected=2 (prefer int; files API has no string enum converter) */
-    public function uploadLocalFile(string $absolutePath, $accessType = 2): array
+    public function uploadLocalFile(string $absolutePath, $accessType = 1): array
     {
         if (!is_file($absolutePath) || !is_readable($absolutePath)) {
             throw new RuntimeException("Recording file not readable: {$absolutePath}");

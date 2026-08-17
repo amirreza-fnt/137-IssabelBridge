@@ -73,15 +73,23 @@ final class Bridge137
         $work = '/tmp/137-' . uniqid('', false) . '.wav';
         $this->soxToWav16($localWavPath, $work);
 
-        // AccessType.TokenProtected = 2 (files API has no JsonStringEnumConverter)
-        $fileId = $this->uploadFile($work, 2);
+        // AccessType.Public = 1 so the employer can play the WAV in a browser
+        // without JWT (GET https://files-host:6001/i/{shortCode}).
+        $uploaded = $this->uploadFileDetailed($work, 1);
         @unlink($work);
 
-        $created = $this->createRequest($outcome, $callerPhone, [$fileId], $operatorExt, $extraDescription);
+        $listenBit = !empty($uploaded['listenUrl']) ? ('listenUrl=' . $uploaded['listenUrl']) : null;
+        $desc = implode(' | ', array_values(array_filter([
+            $extraDescription,
+            $listenBit,
+        ])));
+
+        $created = $this->createRequest($outcome, $callerPhone, [$uploaded['fileId']], $operatorExt, $desc);
         return [
             'requestId'    => $created['requestId'],
             'trackingCode' => $created['trackingCode'],
-            'fileId'       => $fileId,
+            'fileId'       => $uploaded['fileId'],
+            'listenUrl'    => $uploaded['listenUrl'],
         ];
     }
 
@@ -129,8 +137,16 @@ final class Bridge137
         ];
     }
 
-    /** @param int $accessType TokenProtected=2 — files API expects numeric enum */
-    public function uploadFile(string $absolutePath, int $accessType = 2): string
+    /** @param int $accessType Public=1 TokenProtected=2 — files API expects numeric enum */
+    public function uploadFile(string $absolutePath, int $accessType = 1): string
+    {
+        return $this->uploadFileDetailed($absolutePath, $accessType)['fileId'];
+    }
+
+    /**
+     * @return array{fileId:string,shortCode:?string,listenUrl:?string}
+     */
+    public function uploadFileDetailed(string $absolutePath, int $accessType = 1): array
     {
         $fileName = basename($absolutePath);
         $size = filesize($absolutePath);
@@ -161,7 +177,25 @@ final class Bridge137
             throw new RuntimeException('upload HTTP ' . $upload['status'] . ': ' . $upload['body']);
         }
 
-        return (string)$upload['json']['fileId'];
+        $shortCode = isset($upload['json']['shortCode']) ? (string)$upload['json']['shortCode'] : null;
+        $relative = isset($upload['json']['url']) ? (string)$upload['json']['url'] : null;
+        if (($relative === null || $relative === '') && $shortCode) {
+            $relative = '/i/' . $shortCode;
+        }
+
+        $listenUrl = null;
+        if ($relative) {
+            $publicBase = !empty($this->cfg['files_public_base_url'])
+                ? (string)$this->cfg['files_public_base_url']
+                : (string)$this->cfg['files_base_url'];
+            $listenUrl = rtrim($publicBase, '/') . '/' . ltrim($relative, '/');
+        }
+
+        return [
+            'fileId'    => (string)$upload['json']['fileId'],
+            'shortCode' => $shortCode,
+            'listenUrl' => $listenUrl,
+        ];
     }
 
     /** Digits only for Asterisk say_digits (from trackingCode like 137-14050525-000001). */
