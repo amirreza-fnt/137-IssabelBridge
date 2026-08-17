@@ -70,7 +70,8 @@ final class Bridge137
         $work = '/tmp/137-' . uniqid('', false) . '.wav';
         $this->soxToWav16($localWavPath, $work);
 
-        $fileId = $this->uploadFile($work);
+        // AccessType.TokenProtected = 2 (files API has no JsonStringEnumConverter)
+        $fileId = $this->uploadFile($work, 2);
         @unlink($work);
 
         $created = $this->createRequest($outcome, $callerPhone, [$fileId], $operatorExt, $extraDescription);
@@ -125,7 +126,8 @@ final class Bridge137
         ];
     }
 
-    public function uploadFile(string $absolutePath): string
+    /** @param int $accessType TokenProtected=2 — files API expects numeric enum */
+    public function uploadFile(string $absolutePath, int $accessType = 2): string
     {
         $fileName = basename($absolutePath);
         $size = filesize($absolutePath);
@@ -138,8 +140,8 @@ final class Bridge137
             rtrim($this->cfg['files_base_url'], '/') . '/api/files/prepare-upload',
             [
                 'fileName'   => $fileName,
-                'sizeBytes'  => $size,
-                'accessType' => 'TokenProtected',
+                'sizeBytes'  => (int)$size,
+                'accessType' => $accessType,
             ]
         );
         if ($prepare['status'] < 200 || $prepare['status'] >= 300 || empty($prepare['json']['uploadToken'])) {

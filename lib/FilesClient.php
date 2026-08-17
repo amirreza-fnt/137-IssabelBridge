@@ -20,7 +20,8 @@ final class FilesClient
     /**
      * @return array{fileId:string, shortCode:?string, url:?string}
      */
-    public function uploadLocalFile(string $absolutePath, string $accessType = 'TokenProtected'): array
+    /** @param int|string $accessType TokenProtected=2 (prefer int; files API has no string enum converter) */
+    public function uploadLocalFile(string $absolutePath, $accessType = 2): array
     {
         if (!is_file($absolutePath) || !is_readable($absolutePath)) {
             throw new RuntimeException("Recording file not readable: {$absolutePath}");
@@ -32,13 +33,24 @@ final class FilesClient
             throw new RuntimeException("Empty recording: {$absolutePath}");
         }
 
+        if (is_string($accessType) && !ctype_digit($accessType)) {
+            $map = [
+                'Public' => 1,
+                'TokenProtected' => 2,
+                'GroupRestricted' => 3,
+                'Temporary' => 4,
+                'Static' => 5,
+            ];
+            $accessType = $map[$accessType] ?? 2;
+        }
+
         $prepare = $this->http->request(
             'POST',
             rtrim($this->baseUrl, '/') . '/api/files/prepare-upload',
             [
                 'fileName'   => $fileName,
-                'sizeBytes'  => $size,
-                'accessType' => $accessType,
+                'sizeBytes'  => (int)$size,
+                'accessType' => (int)$accessType,
             ],
             [$this->apiKeyHeader . ': ' . $this->apiKey]
         );
