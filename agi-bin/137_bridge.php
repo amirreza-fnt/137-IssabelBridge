@@ -200,6 +200,8 @@ final class Bridge137
             ],
             CURLOPT_TIMEOUT        => (int)$this->cfg['http_timeout'],
             CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => !empty($this->cfg['ssl_verify']),
+            CURLOPT_SSL_VERIFYHOST => !empty($this->cfg['ssl_verify']) ? 2 : 0,
         ]);
         $raw = curl_exec($ch);
         $err = curl_error($ch);
@@ -232,6 +234,8 @@ final class Bridge137
                 $this->cfg['api_key_header'] . ': ' . $this->cfg['api_key'],
             ],
             CURLOPT_TIMEOUT        => (int)$this->cfg['http_timeout'],
+            CURLOPT_SSL_VERIFYPEER => !empty($this->cfg['ssl_verify']),
+            CURLOPT_SSL_VERIFYHOST => !empty($this->cfg['ssl_verify']) ? 2 : 0,
         ]);
         $raw = curl_exec($ch);
         $err = curl_error($ch);
