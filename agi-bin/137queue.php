@@ -1,9 +1,15 @@
 #!/usr/bin/php -q
 <?php
 /**
- * Queue 8002 hangup AGI — answered call with MixMonitor file.
- * Old: SOAP AddAgentCall + AttachVoiceFilePath
- * New: upload monitor wav + PhoneCall ANSWERED → trackingCode (stored on request only).
+ * Queue 8002 post-call AGI — run AFTER Queue() returns (answered call hung up).
+ * Do NOT pass this as the Queue() AGI argument (that runs on answer and uploads a partial wav).
+ *
+ * Dialplan (extensions_override_issabelpbx.conf):
+ *   Queue(8002,${QOPTIONS},,,${QMAXWAIT},,,${QGOSUB},${QRULE},${QPOSITION})
+ *   ExecIf($["${QUEUESTATUS}"=""]?AGI(137queue.php))
+ *
+ * Old SOAP: AddAgentCall + AttachVoiceFilePath
+ * New: upload full MixMonitor wav + PhoneCall ANSWERED → trackingCode
  */
 require 'phpagi.php';
 require_once __DIR__ . '/137_bridge.php';
@@ -17,21 +23,35 @@ try {
     $uidVar = $agi->get_variable('UNIQUEID');
     $member = $agi->get_variable('MEMBERINTERFACE');
     $cid = $agi->get_variable('CALLERID(num)');
+    $monVar = $agi->get_variable('MONITOR_FILENAME');
+    $cdrRec = $agi->get_variable('CDR(recordingfile)');
 
     $uniqueId = isset($uidVar['data']) ? (string)$uidVar['data'] : '';
     $memberData = isset($member['data']) ? (string)$member['data'] : '';
     $caller = isset($cid['data']) ? (string)$cid['data'] : '';
+    $monitorHint = isset($monVar['data']) ? (string)$monVar['data'] : '';
+    $cdrFile = isset($cdrRec['data']) ? (string)$cdrRec['data'] : '';
 
     $agentExt = '';
     if (preg_match('/\/(.*?)\@/', $memberData, $m)) {
         $agentExt = $m[1];
+    } elseif (preg_match('/SIP\/(\d+)/i', $memberData, $m)) {
+        $agentExt = $m[1];
     }
 
-    $filePath = $bridge->findMonitorByUniqueId($uniqueId);
+    // Let MixMonitor flush the wav after hangup.
+    usleep(1500000);
+
+    $filePath = $bridge->resolveMonitorFile($uniqueId, $monitorHint, $cdrFile);
     $agi->verbose('137queue uid=' . $uniqueId . ' agent=' . $agentExt . ' file=' . ($filePath ?: 'NONE'));
 
     if (!$filePath || !is_file($filePath)) {
         $agi->verbose('137queue: MixMonitor file not found for ' . $uniqueId);
+        exit(1);
+    }
+
+    if (filesize($filePath) < 1024) {
+        $agi->verbose('137queue: recording too small (' . filesize($filePath) . ' bytes), skip');
         exit(1);
     }
 

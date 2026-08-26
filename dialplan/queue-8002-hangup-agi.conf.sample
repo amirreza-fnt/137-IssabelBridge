@@ -1,0 +1,18 @@
+; Issabel queue 8002 — run 137queue AFTER the call ends (full MixMonitor), not on answer.
+; Apply in: /etc/asterisk/extensions_override_issabelpbx.conf  (context [ext-queues])
+;
+; REPLACE the Queue() line that currently ends with ,137queue.php,,,,
+; WITH the two lines below (keep the rest of the 8002 priority chain as-is):
+;
+; exten => 8002,n(qcall),Queue(8002,${QOPTIONS},${QURL},${QAANNOUNCE},${QMAXWAIT},,,${QGOSUB},${QRULE},${QPOSITION})
+;  same => n,ExecIf($["${QUEUESTATUS}"=""]?AGI(137queue.php))
+;
+; Meaning:
+;   - Empty QUEUESTATUS ≈ answered call completed → upload ANSWERED + files
+;   - TIMEOUT / JOINEMPTY / ... → skip 137queue (voicemail / misc dest handles the rest)
+;
+; Then: asterisk -rx "dialplan reload"
+;
+; Verify after a real answered call:
+;   grep 137queue /var/log/asterisk/full | tail -5
+; Expect: 137queue tracking=... AFTER hangup, not at the first second of answer.

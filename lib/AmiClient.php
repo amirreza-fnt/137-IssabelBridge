@@ -88,6 +88,92 @@ final class AmiClient
         ]);
     }
 
+    /** Run an Asterisk CLI command via AMI (Events off — body is in Output lines). */
+    public function cli(string $command): array
+    {
+        return $this->send([
+            'Action'  => 'Command',
+            'Command' => $command,
+        ]);
+    }
+
+    /**
+     * Snapshot of queue + SIP peers for kartabl live panel.
+     * @return array{queue:string,rawQueue:string,rawPeers:string,rawChannels:string,callers:list<array<string,string>>,members:list<array<string,string>>}
+     */
+    public function activeCallsSnapshot(string $queue = '8002'): array
+    {
+        $queueLines = $this->cli('queue show ' . $queue);
+        $peerLines = $this->cli('sip show peers');
+        $chanLines = $this->cli('core show channels concise');
+
+        $rawQueue = implode("\n", $queueLines);
+        $rawPeers = implode("\n", $peerLines);
+        $rawChannels = implode("\n", $chanLines);
+
+        $callers = [];
+        $members = [];
+        $inMembers = false;
+        $inCallers = false;
+        foreach ($queueLines as $line) {
+            if (stripos($line, 'Members:') !== false) {
+                $inMembers = true;
+                $inCallers = false;
+                continue;
+            }
+            if (stripos($line, 'Callers:') !== false || stripos($line, 'No Callers') !== false) {
+                $inMembers = false;
+                $inCallers = stripos($line, 'No Callers') === false;
+                continue;
+            }
+            if ($inMembers && preg_match('/^\s*(\d+)\s+\(([^)]+)\).*?\(([^)]+)\)/', $line, $m)) {
+                $members[] = [
+                    'exten'  => $m[1],
+                    'interface' => $m[2],
+                    'status' => trim($m[3]),
+                    'raw'    => trim($line),
+                ];
+            }
+            if ($inCallers && preg_match('/(SIP\/[^\s]+|PJSIP\/[^\s]+|Local\/[^\s]+)/', $line, $m)) {
+                $callers[] = [
+                    'channel' => $m[1],
+                    'raw'     => trim($line),
+                ];
+            }
+        }
+
+        // Fallback: trunk channels currently in queue context from concise output
+        if ($callers === []) {
+            foreach ($chanLines as $line) {
+                // concise: Channel!Context!Exten!Priority!...
+                $parts = explode('!', $line);
+                if (count($parts) < 3) {
+                    continue;
+                }
+                $ch = $parts[0];
+                $ctx = $parts[1] ?? '';
+                $ext = $parts[2] ?? '';
+                if ($ext === $queue || stripos($ctx, 'queue') !== false || stripos($line, $queue) !== false) {
+                    if (stripos($ch, 'SIP/') === 0 || stripos($ch, 'PJSIP/') === 0) {
+                        $callers[] = [
+                            'channel' => $ch,
+                            'raw'     => $line,
+                        ];
+                    }
+                }
+            }
+        }
+
+        return [
+            'queue'        => $queue,
+            'callers'      => $callers,
+            'members'      => $members,
+            'rawQueue'     => $rawQueue,
+            'rawPeers'     => $rawPeers,
+            'rawChannels'  => $rawChannels,
+        ];
+    }
+
     /** @param resource $fp */
     private function writeAction($fp, array $fields): void
     {

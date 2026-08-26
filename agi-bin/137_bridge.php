@@ -204,9 +204,57 @@ final class Bridge137
         return preg_replace('/\D+/', '', $trackingCode) ?: '0';
     }
 
+    /**
+     * Resolve MixMonitor path from channel hints or UNIQUEID search.
+     * Retries briefly so hangup AGI sees the finished wav.
+     */
+    public function resolveMonitorFile(string $uniqueId, string $monitorHint = '', string $cdrRecordingFile = ''): ?string
+    {
+        $candidates = [];
+
+        if ($monitorHint !== '' && $monitorHint !== '0') {
+            $hint = $monitorHint;
+            if ($hint[0] !== '/') {
+                $hint = rtrim($this->cfg['monitor_dir'], '/') . '/' . ltrim($hint, '/');
+            }
+            foreach ([$hint, $hint . '.wav', $hint . '.WAV'] as $p) {
+                $candidates[] = $p;
+            }
+        }
+
+        if ($cdrRecordingFile !== '' && $cdrRecordingFile !== '0') {
+            $cdr = $cdrRecordingFile;
+            if ($cdr[0] !== '/') {
+                $y = date('Y');
+                $m = date('m');
+                $d = date('d');
+                $cdr = rtrim($this->cfg['monitor_dir'], '/') . '/' . $y . '/' . $m . '/' . $d . '/' . basename($cdr);
+            }
+            $candidates[] = $cdr;
+        }
+
+        for ($i = 0; $i < 5; $i++) {
+            foreach ($candidates as $p) {
+                if (is_file($p) && filesize($p) > 0) {
+                    return $p;
+                }
+            }
+            $byUid = $this->findMonitorByUniqueId($uniqueId);
+            if ($byUid && is_file($byUid) && filesize($byUid) > 0) {
+                return $byUid;
+            }
+            usleep(400000);
+        }
+
+        return $this->findMonitorByUniqueId($uniqueId);
+    }
+
     /** Find MixMonitor file containing UNIQUEID under monitor/Y/m/d/. */
     public function findMonitorByUniqueId(string $uniqueId, ?string $y = null, ?string $m = null, ?string $d = null): ?string
     {
+        if ($uniqueId === '') {
+            return null;
+        }
         $y = $y ?: date('Y');
         $m = $m ?: date('m');
         $d = $d ?: date('d');
