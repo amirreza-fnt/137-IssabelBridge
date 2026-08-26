@@ -72,22 +72,44 @@ class AmiClient
     public function cli($command)
     {
         $fp = $this->connectAndLogin();
-        $this->writeAction($fp, array(
-            'Action'  => 'Command',
-            'Command' => $command,
-        ));
-        $result = $this->readCommandOutput($fp);
-        $this->writeAction($fp, array('Action' => 'Logoff'));
-        fclose($fp);
-        return $result;
+        try {
+            return $this->cliOn($fp, $command);
+        } finally {
+            $this->writeAction($fp, array('Action' => 'Logoff'));
+            fclose($fp);
+        }
     }
 
-    /** @param string $queue @return array */
+    /**
+     * Fast snapshot for kartabl: one AMI login, two CLI commands (no channels dump).
+     * Falls back to asterisk -rx when AMI is slow/unavailable.
+     *
+     * @param string $queue
+     * @return array
+     */
     public function activeCallsSnapshot($queue = '8002')
     {
-        $queueLines = $this->cli('queue show ' . $queue);
-        $peerLines = $this->cli('sip show peers');
-        $chanLines = $this->cli('core show channels concise');
+        $queueLines = array();
+        $peerLines = array();
+        $via = 'ami';
+
+        try {
+            $fp = $this->connectAndLogin();
+            try {
+                $queueLines = $this->cliOn($fp, 'queue show ' . $queue);
+                $peerLines = $this->cliOn($fp, 'sip show peers');
+            } finally {
+                $this->writeAction($fp, array('Action' => 'Logoff'));
+                fclose($fp);
+            }
+        } catch (Exception $e) {
+            $via = 'shell';
+            $queueLines = $this->shellCli('queue show ' . $queue);
+            $peerLines = $this->shellCli('sip show peers');
+            if ($queueLines === array() && $peerLines === array()) {
+                throw $e;
+            }
+        }
 
         $callers = array();
         $members = array();
@@ -155,24 +177,6 @@ class AmiClient
             }
         }
 
-        if ($callers === array()) {
-            foreach ($chanLines as $line) {
-                $line = preg_replace('/^Output:\s?/i', '', $line);
-                $parts = explode('!', $line);
-                if (count($parts) < 3) {
-                    continue;
-                }
-                $ch = $parts[0];
-                $ctx = isset($parts[1]) ? $parts[1] : '';
-                $ext = isset($parts[2]) ? $parts[2] : '';
-                if ($ext === $queue || stripos($ctx, 'queue') !== false || stripos($line, $queue) !== false) {
-                    if (stripos($ch, 'SIP/') === 0 || stripos($ch, 'PJSIP/') === 0) {
-                        $callers[] = array('channel' => $ch, 'raw' => $line);
-                    }
-                }
-            }
-        }
-
         $onlineMembers = 0;
         foreach ($members as $mem) {
             if (!empty($mem['online'])) {
@@ -188,10 +192,34 @@ class AmiClient
             'membersTotal'  => count($members),
             'waiting'       => count($callers),
             'peers'         => $peers,
-            'rawQueue'      => implode("\n", $queueLines),
-            'rawPeers'      => implode("\n", $peerLines),
-            'rawChannels'   => implode("\n", $chanLines),
+            'source'        => $via,
         );
+    }
+
+    /** @param resource $fp @param string $command @return string[] */
+    private function cliOn($fp, $command)
+    {
+        $this->writeAction($fp, array(
+            'Action'  => 'Command',
+            'Command' => $command,
+        ));
+        return $this->readCommandOutput($fp);
+    }
+
+    /** @param string $command @return string[] */
+    private function shellCli($command)
+    {
+        $bin = trim((string)shell_exec('command -v asterisk 2>/dev/null'));
+        if ($bin === '') {
+            $bin = '/usr/sbin/asterisk';
+        }
+        if (!is_executable($bin)) {
+            return array();
+        }
+        $out = array();
+        $code = 0;
+        exec(escapeshellcmd($bin) . ' -rx ' . escapeshellarg($command) . ' 2>/dev/null', $out, $code);
+        return $code === 0 ? $out : array();
     }
 
     /** @return resource */
@@ -248,11 +276,16 @@ class AmiClient
     {
         $lines = array();
         $started = false;
-        $deadline = time() + max(3, $this->timeout);
+        $deadline = time() + max(2, min(4, $this->timeout));
         while (!feof($fp) && time() <= $deadline) {
             $line = fgets($fp);
             if ($line === false) {
-                break;
+                // brief wait for next chunk
+                usleep(50000);
+                if (time() > $deadline) {
+                    break;
+                }
+                continue;
             }
             $line = rtrim($line, "\r\n");
             if (stripos($line, 'Response:') === 0) {
