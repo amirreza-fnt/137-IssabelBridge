@@ -44,11 +44,15 @@ try {
 
     $snap = $ami->activeCallsSnapshot($queue);
     echo json_encode([
-        'ok'      => true,
-        'queue'   => $snap['queue'],
-        'callers' => $snap['callers'],
-        'members' => $snap['members'],
-        'at'      => gmdate('c'),
+        'ok'            => true,
+        'queue'         => $snap['queue'],
+        'callers'       => $snap['callers'],
+        'members'       => $snap['members'],
+        'membersOnline' => isset($snap['membersOnline']) ? $snap['membersOnline'] : 0,
+        'membersTotal'  => isset($snap['membersTotal']) ? $snap['membersTotal'] : count($snap['members']),
+        'waiting'       => isset($snap['waiting']) ? $snap['waiting'] : count($snap['callers']),
+        'peers'         => isset($snap['peers']) ? $snap['peers'] : [],
+        'at'            => gmdate('c'),
     ], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     http_response_code(500);
