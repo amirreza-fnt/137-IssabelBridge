@@ -1,24 +1,43 @@
 <?php
-declare(strict_types=1);
-
 /**
  * Minimal Asterisk Manager Interface (AMI) client for answer / reject / hangup.
+ * Compatible with PHP 7.2+ on Issabel (no constructor property promotion).
  * Credentials come from /etc/asterisk/manager.conf on Issabel.
  */
-final class AmiClient
+class AmiClient
 {
-    public function __construct(
-        private readonly string $host,
-        private readonly int $port,
-        private readonly string $username,
-        private readonly string $secret,
-        private readonly int $timeout = 5
-    ) {}
+    /** @var string */
+    private $host;
+    /** @var int */
+    private $port;
+    /** @var string */
+    private $username;
+    /** @var string */
+    private $secret;
+    /** @var int */
+    private $timeout;
 
     /**
-     * @return list<string> raw AMI response lines
+     * @param string $host
+     * @param int    $port
+     * @param string $username
+     * @param string $secret
+     * @param int    $timeout
      */
-    public function send(array $actionFields): array
+    public function __construct($host, $port, $username, $secret, $timeout = 5)
+    {
+        $this->host = (string)$host;
+        $this->port = (int)$port;
+        $this->username = (string)$username;
+        $this->secret = (string)$secret;
+        $this->timeout = (int)$timeout;
+    }
+
+    /**
+     * @param array $actionFields
+     * @return string[]
+     */
+    public function send(array $actionFields)
     {
         $fp = @fsockopen($this->host, $this->port, $errno, $errstr, $this->timeout);
         if ($fp === false) {
@@ -26,15 +45,14 @@ final class AmiClient
         }
         stream_set_timeout($fp, $this->timeout);
 
-        // Banner
         fgets($fp);
 
-        $this->writeAction($fp, [
+        $this->writeAction($fp, array(
             'Action'   => 'Login',
             'Username' => $this->username,
             'Secret'   => $this->secret,
             'Events'   => 'off',
-        ]);
+        ));
         $login = $this->readMessage($fp);
         if (!$this->isSuccess($login)) {
             fclose($fp);
@@ -44,40 +62,48 @@ final class AmiClient
         $this->writeAction($fp, $actionFields);
         $result = $this->readMessage($fp);
 
-        $this->writeAction($fp, ['Action' => 'Logoff']);
+        $this->writeAction($fp, array('Action' => 'Logoff'));
         fclose($fp);
 
         return $result;
     }
 
-    /** Hangup an active channel (reject / end call). */
-    public function hangup(string $channel): array
+    /** @param string $channel @return string[] */
+    public function hangup($channel)
     {
-        return $this->send([
+        return $this->send(array(
             'Action'  => 'Hangup',
             'Channel' => $channel,
-        ]);
+        ));
     }
 
     /**
-     * Redirect ringing channel to an operator extension (answer path).
-     * Typical: Redirect Channel → Exten of agent, Context from-internal, Priority 1
+     * @param string $channel
+     * @param string $exten
+     * @param string $context
+     * @param int    $priority
+     * @return string[]
      */
-    public function redirect(string $channel, string $exten, string $context = 'from-internal', int $priority = 1): array
+    public function redirect($channel, $exten, $context = 'from-internal', $priority = 1)
     {
-        return $this->send([
+        return $this->send(array(
             'Action'   => 'Redirect',
             'Channel'  => $channel,
             'Exten'    => $exten,
             'Context'  => $context,
             'Priority' => (string)$priority,
-        ]);
+        ));
     }
 
-    /** Originate a call to an extension (optional helper). */
-    public function originateLocal(string $exten, string $context = 'from-internal', string $callerId = '137'): array
+    /**
+     * @param string $exten
+     * @param string $context
+     * @param string $callerId
+     * @return string[]
+     */
+    public function originateLocal($exten, $context = 'from-internal', $callerId = '137')
     {
-        return $this->send([
+        return $this->send(array(
             'Action'   => 'Originate',
             'Channel'  => 'Local/' . $exten . '@' . $context,
             'Context'  => $context,
@@ -85,23 +111,24 @@ final class AmiClient
             'Priority' => '1',
             'CallerID' => $callerId,
             'Async'    => 'true',
-        ]);
+        ));
     }
 
-    /** Run an Asterisk CLI command via AMI (Events off — body is in Output lines). */
-    public function cli(string $command): array
+    /** @param string $command @return string[] */
+    public function cli($command)
     {
-        return $this->send([
+        return $this->send(array(
             'Action'  => 'Command',
             'Command' => $command,
-        ]);
+        ));
     }
 
     /**
      * Snapshot of queue + SIP peers for kartabl live panel.
-     * @return array{queue:string,rawQueue:string,rawPeers:string,rawChannels:string,callers:list<array<string,string>>,members:list<array<string,string>>}
+     * @param string $queue
+     * @return array
      */
-    public function activeCallsSnapshot(string $queue = '8002'): array
+    public function activeCallsSnapshot($queue = '8002')
     {
         $queueLines = $this->cli('queue show ' . $queue);
         $peerLines = $this->cli('sip show peers');
@@ -111,8 +138,8 @@ final class AmiClient
         $rawPeers = implode("\n", $peerLines);
         $rawChannels = implode("\n", $chanLines);
 
-        $callers = [];
-        $members = [];
+        $callers = array();
+        $members = array();
         $inMembers = false;
         $inCallers = false;
         foreach ($queueLines as $line) {
@@ -127,55 +154,53 @@ final class AmiClient
                 continue;
             }
             if ($inMembers && preg_match('/^\s*(\d+)\s+\(([^)]+)\).*?\(([^)]+)\)/', $line, $m)) {
-                $members[] = [
-                    'exten'  => $m[1],
+                $members[] = array(
+                    'exten'     => $m[1],
                     'interface' => $m[2],
-                    'status' => trim($m[3]),
-                    'raw'    => trim($line),
-                ];
+                    'status'    => trim($m[3]),
+                    'raw'       => trim($line),
+                );
             }
             if ($inCallers && preg_match('/(SIP\/[^\s]+|PJSIP\/[^\s]+|Local\/[^\s]+)/', $line, $m)) {
-                $callers[] = [
+                $callers[] = array(
                     'channel' => $m[1],
                     'raw'     => trim($line),
-                ];
+                );
             }
         }
 
-        // Fallback: trunk channels currently in queue context from concise output
-        if ($callers === []) {
+        if ($callers === array()) {
             foreach ($chanLines as $line) {
-                // concise: Channel!Context!Exten!Priority!...
                 $parts = explode('!', $line);
                 if (count($parts) < 3) {
                     continue;
                 }
                 $ch = $parts[0];
-                $ctx = $parts[1] ?? '';
-                $ext = $parts[2] ?? '';
+                $ctx = isset($parts[1]) ? $parts[1] : '';
+                $ext = isset($parts[2]) ? $parts[2] : '';
                 if ($ext === $queue || stripos($ctx, 'queue') !== false || stripos($line, $queue) !== false) {
                     if (stripos($ch, 'SIP/') === 0 || stripos($ch, 'PJSIP/') === 0) {
-                        $callers[] = [
+                        $callers[] = array(
                             'channel' => $ch,
                             'raw'     => $line,
-                        ];
+                        );
                     }
                 }
             }
         }
 
-        return [
-            'queue'        => $queue,
-            'callers'      => $callers,
-            'members'      => $members,
-            'rawQueue'     => $rawQueue,
-            'rawPeers'     => $rawPeers,
-            'rawChannels'  => $rawChannels,
-        ];
+        return array(
+            'queue'       => $queue,
+            'callers'     => $callers,
+            'members'     => $members,
+            'rawQueue'    => $rawQueue,
+            'rawPeers'    => $rawPeers,
+            'rawChannels' => $rawChannels,
+        );
     }
 
-    /** @param resource $fp */
-    private function writeAction($fp, array $fields): void
+    /** @param resource $fp @param array $fields */
+    private function writeAction($fp, array $fields)
     {
         $buf = '';
         foreach ($fields as $k => $v) {
@@ -185,10 +210,10 @@ final class AmiClient
         fwrite($fp, $buf);
     }
 
-    /** @param resource $fp @return list<string> */
-    private function readMessage($fp): array
+    /** @param resource $fp @return string[] */
+    private function readMessage($fp)
     {
-        $lines = [];
+        $lines = array();
         while (!feof($fp)) {
             $line = fgets($fp);
             if ($line === false) {
@@ -203,8 +228,8 @@ final class AmiClient
         return $lines;
     }
 
-    /** @param list<string> $lines */
-    private function isSuccess(array $lines): bool
+    /** @param string[] $lines */
+    private function isSuccess(array $lines)
     {
         foreach ($lines as $line) {
             if (stripos($line, 'Response: Success') === 0) {
