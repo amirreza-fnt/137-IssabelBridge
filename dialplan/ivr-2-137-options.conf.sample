@@ -1,0 +1,17 @@
+; ivr-2 digit map for 137 (announcement file custom/ivr2 must match this text):
+;  1 = ثبت درخواست (138)
+;  2 = ارتباط با کارشناس (queue 8002)
+;  3 = پیگیری (139)
+;
+; Append to extensions_override_issabelpbx.conf then: asterisk -rx "dialplan reload"
+; Also re-record System Recording custom/ivr2 with the new wording.
+
+[ivr-2]
+exten => 1,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
+ same => n(ivrsel-1),Goto(ext-miscdests,1,1)
+
+exten => 2,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
+ same => n(ivrsel-2),Goto(ext-queues,8002,1)
+
+exten => 3,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
+ same => n(ivrsel-3),Goto(ext-miscdests,2,1)
