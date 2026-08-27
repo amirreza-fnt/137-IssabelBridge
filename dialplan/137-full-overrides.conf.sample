@@ -1,16 +1,17 @@
-; === 137 overrides: queue hangup submit + kartabl answer record + IVR menu ===
-; Installed by install-137-overrides.py into extensions_override_issabelpbx.conf
+; === 137 overrides: MixMonitor post-submit + kartabl answer + IVR ===
+; Installed by install-137-overrides.py
 
 ; ---------------------------------------------------------------------------
-; Queue 8002: push hangup handler, Queue WITHOUT mid-call AGI
-; (replaces labeled priorities qagi + qcall from FreePBX)
+; Queue 8002:
+;  - qagi: set MIXMON_POST so when recording ends → 137-on-record-end.php
+;  - qcall: Queue WITHOUT AGI-on-answer (keep label so FreePBX chain stays intact)
 ; ---------------------------------------------------------------------------
 [ext-queues]
-exten => 8002,n(qagi),Set(CHANNEL(hangup_handler_push)=137-hangup-submit,s,1)
+exten => 8002,n(qagi),Set(__MIXMON_POST=/usr/bin/php -q /var/lib/asterisk/agi-bin/137-on-record-end.php ${UNIQUEID} ${CALLERID(num)})
 exten => 8002,n(qcall),Queue(8002,${QOPTIONS},${QURL},${QAANNOUNCE},${QMAXWAIT},,,${QGOSUB},${QRULE},${QPOSITION})
 
 ; ---------------------------------------------------------------------------
-; Shared submit — hangup handler entry (Return) + runnable gosub body
+; Backup hangup submit (if MixMonitor post did not run)
 ; ---------------------------------------------------------------------------
 [137-hangup-submit]
 exten => s,1,Gosub(137-hangup-submit,run,1)
@@ -24,8 +25,6 @@ exten => run,1,NoOp(137 hangup-submit agent=${137_AGENT} qs=${QUEUESTATUS} done=
  same => n(done),Return()
 
 ; ---------------------------------------------------------------------------
-; Kartabl Answer: new MixMonitor for agent talk, then Dial
-; ---------------------------------------------------------------------------
 [137-kartabl-answer]
 exten => _X.,1,NoOp(137 kartabl answer agent=${EXTEN} chan=${CHANNEL})
  same => n,Set(__137_AGENT=${EXTEN})
@@ -33,7 +32,7 @@ exten => _X.,1,NoOp(137 kartabl answer agent=${EXTEN} chan=${CHANNEL})
  same => n,Set(MEMBERINTERFACE=SIP/${EXTEN})
  same => n,StopMixMonitor()
  same => n,Set(MONITOR_FILENAME=/var/spool/asterisk/monitor/137k-${UNIQUEID})
- same => n,MixMonitor(${MONITOR_FILENAME}.wav,b)
+ same => n,MixMonitor(${MONITOR_FILENAME}.wav,b,/usr/bin/php -q /var/lib/asterisk/agi-bin/137-on-record-end.php ${UNIQUEID} ${CALLERID(num)} ${EXTEN})
  same => n,Set(CHANNEL(hangup_handler_push)=137-hangup-submit,s,1)
  same => n,Wait(1)
  same => n,SIPAddHeader(Call-Info: <sip:${EXTEN}@local>\;answer-after=0)
@@ -41,8 +40,6 @@ exten => _X.,1,NoOp(137 kartabl answer agent=${EXTEN} chan=${CHANNEL})
  same => n,Gosub(137-hangup-submit,run,1)
  same => n,Hangup()
 
-; ---------------------------------------------------------------------------
-; IVR: 1=ثبت  2=کارشناس  3=پیگیری   (ivr-2 speaks custom/ivr1 like daytime menu)
 ; ---------------------------------------------------------------------------
 [ivr-1]
 exten => 1,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
