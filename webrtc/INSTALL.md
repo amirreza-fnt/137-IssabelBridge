@@ -38,6 +38,9 @@ asterisk -rx "pjsip show transports"
 asterisk -rx "pjsip show endpoint 2101"
 ```
 
+> **توجه:** دستور را داخل bash این‌طور نزن: `pjsip show endpoint 2101`  
+> درستش با Asterisk CLI است: `asterisk -rx "pjsip show endpoint 2101"`
+
 باید `transport-wss` روی `:8089` دیده شود.
 
 ## ۳) فایروال
