@@ -202,11 +202,20 @@ class AmiClient
                     'raw'    => trim($line),
                 );
             }
-            if ($inCallers && preg_match('/(SIP\/[^\s]+|PJSIP\/[^\s]+|Local\/[^\s]+)/', $line, $m)) {
+            if ($inCallers && preg_match('/(SIP\/[^\s]+|PJSIP\/[^\s]+|Local\/[^\s]+|DAHDI\/[^\s]+|IAX2\/[^\s]+)/', $line, $m)) {
                 $callers[] = array(
                     'channel' => $m[1],
                     'raw'     => trim($line),
                 );
+            } elseif ($inCallers && preg_match('/^\s*\d+\.\s+(\S+)/', $line, $m)) {
+                // fallback: "1. Something/..." when tech prefix was missed
+                $chan = $m[1];
+                if (strpos($chan, '/') !== false) {
+                    $callers[] = array(
+                        'channel' => $chan,
+                        'raw'     => trim($line),
+                    );
+                }
             }
         }
 
