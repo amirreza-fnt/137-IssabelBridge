@@ -1,0 +1,57 @@
+; =============================================================================
+; 137 WebRTC agent 2101 — ADDITIVE only (does not touch SIP/2001 on 5066)
+; Copy pieces into Issabel, then: asterisk -rx "module reload res_pjsip.so" etc.
+; See webrtc/INSTALL.md
+; =============================================================================
+
+; --- /etc/asterisk/pjsip_custom.conf  (or #include from pjsip.conf) ---
+
+[transport-wss]
+type=transport
+protocol=wss
+bind=0.0.0.0:8089
+; Use Issabel HTTPS certs (adjust paths if different on your box):
+cert_file=/etc/asterisk/keys/asterisk.crt
+priv_key_file=/etc/asterisk/keys/asterisk.key
+method=tlsv1_2
+
+[2101]
+type=endpoint
+context=from-internal
+disallow=all
+allow=opus,ulaw,alaw
+auth=2101
+aors=2101
+dtls_auto_generate_cert=yes
+webrtc=yes
+media_encryption=dtls
+media_use_received_transport=yes
+rtcp_mux=yes
+use_avpf=yes
+ice_support=yes
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+direct_media=no
+timers=yes
+; Optional: restrict to LAN if needed
+; permit=192.168.0.0/16
+
+[2101]
+type=auth
+auth_type=userpass
+username=2101
+password=Pass2101WebRtc!
+; CHANGE this password and put the same value in 137-request Telephony:SipPassword
+
+[2101]
+type=aor
+max_contacts=5
+remove_existing=yes
+qualify_frequency=30
+
+; Optional identify (usually not needed for WSS clients)
+;[2101]
+;type=identify
+;endpoint=2101
+;match=0.0.0.0/0

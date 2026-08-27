@@ -29,14 +29,22 @@ exten => run,1,NoOp(137 hangup-submit agent=${137_AGENT} qs=${QUEUESTATUS} done=
 exten => _X.,1,NoOp(137 kartabl answer agent=${EXTEN} chan=${CHANNEL})
  same => n,Set(__137_AGENT=${EXTEN})
  same => n,Set(__137_SUBMITTED=0)
- same => n,Set(MEMBERINTERFACE=SIP/${EXTEN})
+ same => n,ExecIf($["${EXTEN}"="2101"]?Set(MEMBERINTERFACE=PJSIP/${EXTEN}):Set(MEMBERINTERFACE=SIP/${EXTEN}))
  same => n,StopMixMonitor()
  same => n,Set(MONITOR_FILENAME=/var/spool/asterisk/monitor/137k-${UNIQUEID})
  same => n,MixMonitor(${MONITOR_FILENAME}.wav,b,/usr/bin/php -q /var/lib/asterisk/agi-bin/137-on-record-end.php ${UNIQUEID} ${CALLERID(num)} ${EXTEN})
  same => n,Set(CHANNEL(hangup_handler_push)=137-hangup-submit,s,1)
  same => n,Wait(1)
- same => n,SIPAddHeader(Call-Info: <sip:${EXTEN}@local>\;answer-after=0)
- same => n,Dial(SIP/${EXTEN},120,tTrg)
+ ; 2101 = PJSIP WebRTC (kartabl JsSIP). Other extens = classic chan_sip (MicroSIP).
+ same => n,GotoIf($["${EXTEN}"="2101"]?webrtc,1:sip,1)
+
+exten => sip,1,SIPAddHeader(Call-Info: <sip:${137_AGENT}@local>\;answer-after=0)
+ same => n,Dial(SIP/${137_AGENT},120,tTrg)
+ same => n,Gosub(137-hangup-submit,run,1)
+ same => n,Hangup()
+
+exten => webrtc,1,NoOp(137 dial PJSIP WebRTC ${137_AGENT})
+ same => n,Dial(PJSIP/${137_AGENT},120,tTrg)
  same => n,Gosub(137-hangup-submit,run,1)
  same => n,Hangup()
 

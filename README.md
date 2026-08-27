@@ -35,6 +35,24 @@ Deploy پوشه `api/` + `lib/` + `config.php` زیر مثلاً `/var/www/html/
 
 سرویس `137-request` این‌ها را پروکسی می‌کند: `/api/v1/phone-calls/live` و `/api/v1/phone-calls/control`.
 
+## WebRTC داخل کارتابل (داخلی 2101 — بدون MicroSIP)
+
+مسیر کامل و ایمن (SIP/2001 دست نخورده): [`webrtc/INSTALL.md`](webrtc/INSTALL.md)
+
+خلاصه:
+
+1. PJSIP endpoint `2101` + WSS `:8089` از `webrtc/pjsip-2101.conf.sample`
+2. `dialplan/install-137-overrides.py` → `Dial(PJSIP/2101)` در `[137-kartabl-answer]`
+3. در `137-request` Telephony: `DefaultAgentExten=2101`, `WssUrl`, `SipPassword`
+4. کارتابل را با **HTTPS** باز کنید
+
+چک:
+
+```bash
+asterisk -rx "pjsip show endpoint 2101"
+asterisk -rx "dialplan show 2101@137-kartabl-answer"
+```
+
 ## نصب روی ایزابل
 
 ```bash
