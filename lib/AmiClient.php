@@ -132,8 +132,8 @@ class AmiClient
     }
 
     /**
-     * Fast snapshot for kartabl: one AMI login, two CLI commands (no channels dump).
-     * Falls back to asterisk -rx when AMI is slow/unavailable.
+     * Fast snapshot for kartabl: prefer asterisk -rx (usually <200ms).
+     * AMI Command on some Issabel builds waits until read deadline (~4s×2 ≈ 8–10s).
      *
      * @param string $queue
      * @return array
@@ -142,23 +142,19 @@ class AmiClient
     {
         $queueLines = array();
         $peerLines = array();
-        $via = 'ami';
+        $via = 'shell';
 
-        try {
+        $queueLines = $this->shellCli('queue show ' . $queue);
+        // peers optional — skip for speed (kartabl mainly needs callers/members)
+
+        if ($queueLines === array()) {
+            $via = 'ami';
             $fp = $this->connectAndLogin();
             try {
                 $queueLines = $this->cliOn($fp, 'queue show ' . $queue);
-                $peerLines = $this->cliOn($fp, 'sip show peers');
             } finally {
                 $this->writeAction($fp, array('Action' => 'Logoff'));
                 fclose($fp);
-            }
-        } catch (Exception $e) {
-            $via = 'shell';
-            $queueLines = $this->shellCli('queue show ' . $queue);
-            $peerLines = $this->shellCli('sip show peers');
-            if ($queueLines === array() && $peerLines === array()) {
-                throw $e;
             }
         }
 
