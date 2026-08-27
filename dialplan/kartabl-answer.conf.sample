@@ -1,0 +1,13 @@
+; Kartabl "Answer" — pull caller from Queue 8002 and Dial the agent cleanly.
+; Append to: /etc/asterisk/extensions_override_issabelpbx.conf
+; Then: asterisk -rx "dialplan reload"
+;
+; Why: Redirect(caller → from-internal/2001) while Queue is already ringing
+; Local/2001@from-queue causes BUSY / congestion tone (music stops, beep only).
+
+[137-kartabl-answer]
+exten => _X.,1,NoOp(137 kartabl answer agent=${EXTEN} chan=${CHANNEL})
+ same => n,Wait(1)
+ same => n,SIPAddHeader(Call-Info: <sip:${EXTEN}@local>\;answer-after=0)
+ same => n,Dial(SIP/${EXTEN},120,tTr)
+ same => n,Hangup()

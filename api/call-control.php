@@ -68,8 +68,9 @@ try {
         if ($exten === '') {
             throw new RuntimeException('exten is required for answer');
         }
-        $context = trim((string)($data['context'] ?? 'from-internal'));
-        $amiResult = $ami->redirect($channel, $exten, $context, 1);
+        // Do NOT redirect straight into from-internal while Queue is still
+        // ringing the same agent — that yields busy/congestion (caller hears beep).
+        $amiResult = $ami->answerAsAgent($channel, $exten);
     } else {
         throw new RuntimeException('action must be answer|reject|hangup');
     }

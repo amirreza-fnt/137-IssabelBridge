@@ -55,6 +55,60 @@ class AmiClient
         ));
     }
 
+    /**
+     * Pull caller out of Queue and Dial the agent cleanly.
+     * Plain Redirect→from-internal races with the queue's own Local/agent ring → busy tone.
+     *
+     * @param string $callerChannel
+     * @param string $exten
+     * @return string[]
+     */
+    public function answerAsAgent($callerChannel, $exten)
+    {
+        $exten = preg_replace('/\D+/', '', (string)$exten);
+        if ($exten === '') {
+            throw new RuntimeException('agent exten required');
+        }
+
+        $fp = $this->connectAndLogin();
+        try {
+            // Drop the queue's ringing legs to this agent so Dial is not BUSY.
+            $chanLines = $this->cliOn($fp, 'core show channels concise');
+            foreach ($chanLines as $line) {
+                $line = preg_replace('/^Output:\s?/i', '', $line);
+                $name = strtok($line, '!');
+                if ($name === false || $name === '') {
+                    continue;
+                }
+                if (stripos($name, 'Local/' . $exten . '@from-queue') === 0
+                    || stripos($name, 'SIP/' . $exten . '-') === 0
+                    || stripos($name, 'SIP/' . $exten . '/') === 0) {
+                    // Never hang up the citizen trunk leg.
+                    if (strcasecmp($name, $callerChannel) === 0) {
+                        continue;
+                    }
+                    $this->writeAction($fp, array(
+                        'Action'  => 'Hangup',
+                        'Channel' => $name,
+                    ));
+                    $this->readMessage($fp);
+                }
+            }
+
+            $this->writeAction($fp, array(
+                'Action'   => 'Redirect',
+                'Channel'  => $callerChannel,
+                'Context'  => '137-kartabl-answer',
+                'Exten'    => $exten,
+                'Priority' => '1',
+            ));
+            return $this->readMessage($fp);
+        } finally {
+            $this->writeAction($fp, array('Action' => 'Logoff'));
+            fclose($fp);
+        }
+    }
+
     public function originateLocal($exten, $context = 'from-internal', $callerId = '137')
     {
         return $this->send(array(
