@@ -19,10 +19,11 @@ QCALL = (
     "Queue(8002,${QOPTIONS},${QURL},${QAANNOUNCE},${QMAXWAIT},,,${QGOSUB},${QRULE},${QPOSITION})"
 )
 
-# Force MixMonitor 3rd arg (post-command) on FreePBX/Issabel recq priority 2
+# Force MixMonitor on FreePBX/Issabel recq priority 2.
+# IMPORTANT: use MONITOR_FILENAME (set in recq,1) — MIXMON_CALLFILENAME is often empty here.
 RECMON = (
     "exten => recq,2,"
-    "MixMonitor(${MIXMON_CALLFILENAME}.${MIXMON_FORMAT},${MONITOR_OPTIONS},"
+    "MixMonitor(${MONITOR_FILENAME}.wav,${MONITOR_OPTIONS},"
     "/usr/bin/php -q /var/lib/asterisk/agi-bin/137-on-record-end.php ${UNIQUEID} ${CALLERID(num)})"
 )
 

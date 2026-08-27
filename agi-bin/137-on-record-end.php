@@ -16,8 +16,15 @@ $uniqueId = isset($argv[1]) ? trim((string)$argv[1]) : '';
 $caller   = isset($argv[2]) ? trim((string)$argv[2]) : '';
 $agentExt = isset($argv[3]) ? preg_replace('/\D+/', '', (string)$argv[3]) : '';
 
+$logFile = '/var/log/asterisk/137-submit.log';
+$log = function ($msg) use ($logFile) {
+    $line = date('c') . ' ' . $msg . "\n";
+    @file_put_contents($logFile, $line, FILE_APPEND);
+    fwrite(STDERR, $line);
+};
+
 if ($uniqueId === '' || $uniqueId === '0') {
-    fwrite(STDERR, "137-on-record-end: missing uniqueId\n");
+    $log('137-on-record-end: missing uniqueId');
     exit(1);
 }
 
@@ -29,13 +36,13 @@ $lockFile = $lockDir . '/' . preg_replace('/[^0-9.]/', '_', $uniqueId) . '.lock'
 $doneFile = $lockDir . '/' . preg_replace('/[^0-9.]/', '_', $uniqueId) . '.done';
 
 if (is_file($doneFile)) {
-    fwrite(STDERR, "137-on-record-end: already submitted {$uniqueId}\n");
+    $log("137-on-record-end: already submitted {$uniqueId}");
     exit(0);
 }
 
 $fp = @fopen($lockFile, 'c+');
 if ($fp === false || !flock($fp, LOCK_EX | LOCK_NB)) {
-    fwrite(STDERR, "137-on-record-end: busy {$uniqueId}\n");
+    $log("137-on-record-end: busy {$uniqueId}");
     exit(0);
 }
 
@@ -55,7 +62,7 @@ try {
     }
 
     if (!$filePath || !is_file($filePath) || filesize($filePath) < 1024) {
-        fwrite(STDERR, "137-on-record-end: no usable wav yet for {$uniqueId} path=" . ($filePath ?: 'NONE') . "\n");
+        $log('137-on-record-end: no usable wav yet for ' . $uniqueId . ' path=' . ($filePath ?: 'NONE'));
         exit(1);
     }
 
@@ -82,11 +89,11 @@ try {
     );
 
     file_put_contents($doneFile, $result['trackingCode'] . "\n");
-    fwrite(STDERR, '137-on-record-end tracking=' . $result['trackingCode']
+    $log('137-on-record-end tracking=' . $result['trackingCode']
         . ' requestId=' . $result['requestId']
-        . ' file=' . $filePath . "\n");
+        . ' file=' . $filePath);
 } catch (Throwable $e) {
-    fwrite(STDERR, '137-on-record-end ERROR: ' . $e->getMessage() . "\n");
+    $log('137-on-record-end ERROR: ' . $e->getMessage());
     exit(1);
 } finally {
     flock($fp, LOCK_UN);
