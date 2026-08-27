@@ -1,13 +1,27 @@
-; Kartabl "Answer" — pull caller from Queue 8002 and Dial the agent cleanly.
-; Append to: /etc/asterisk/extensions_override_issabelpbx.conf
-; Then: asterisk -rx "dialplan reload"
+; Kartabl "Answer" — pull caller from Queue, Dial agent, then save recording + PhoneCall.
+; Put this [137-kartabl-answer] block into: /etc/asterisk/extensions_override_issabelpbx.conf
+; (replace any older 137-kartabl-answer block), then:
+;   asterisk -rx "dialplan reload"
 ;
-; Why: Redirect(caller → from-internal/2001) while Queue is already ringing
-; Local/2001@from-queue causes BUSY / congestion tone (music stops, beep only).
+; Redirect out of Queue skips the normal post-Queue 137queue path, so this context
+; records and runs AGI(137queue.php) itself after the agent call ends.
 
 [137-kartabl-answer]
 exten => _X.,1,NoOp(137 kartabl answer agent=${EXTEN} chan=${CHANNEL})
+ same => n,Set(__137_AGENT=${EXTEN})
+ same => n,Set(MEMBERINTERFACE=SIP/${EXTEN})
+ same => n,Set(MONITOR_FILENAME=/var/spool/asterisk/monitor/137k-${UNIQUEID})
+ same => n,MixMonitor(${MONITOR_FILENAME}.wav,b)
  same => n,Wait(1)
  same => n,SIPAddHeader(Call-Info: <sip:${EXTEN}@local>\;answer-after=0)
  same => n,Dial(SIP/${EXTEN},120,tTr)
- same => n,Hangup()
+ same => n,Goto(137-kartabl-answer,submit,1)
+
+exten => h,1,NoOp(137 kartabl hangup agent=${137_AGENT})
+ same => n,Goto(137-kartabl-answer,submit,1)
+
+exten => submit,1,GotoIf($["${137_SUBMITTED}"="1"]?done)
+ same => n,Set(137_SUBMITTED=1)
+ same => n,StopMixMonitor()
+ same => n,ExecIf($["${137_AGENT}"!=""]?AGI(137queue.php))
+ same => n(done),Hangup()

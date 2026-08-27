@@ -22,18 +22,22 @@ try {
 
     $uidVar = $agi->get_variable('UNIQUEID');
     $member = $agi->get_variable('MEMBERINTERFACE');
+    $agentVar = $agi->get_variable('137_AGENT');
     $cid = $agi->get_variable('CALLERID(num)');
     $monVar = $agi->get_variable('MONITOR_FILENAME');
     $cdrRec = $agi->get_variable('CDR(recordingfile)');
 
     $uniqueId = isset($uidVar['data']) ? (string)$uidVar['data'] : '';
     $memberData = isset($member['data']) ? (string)$member['data'] : '';
+    $agentHint = isset($agentVar['data']) ? (string)$agentVar['data'] : '';
     $caller = isset($cid['data']) ? (string)$cid['data'] : '';
     $monitorHint = isset($monVar['data']) ? (string)$monVar['data'] : '';
     $cdrFile = isset($cdrRec['data']) ? (string)$cdrRec['data'] : '';
 
     $agentExt = '';
-    if (preg_match('/\/(.*?)\@/', $memberData, $m)) {
+    if ($agentHint !== '' && $agentHint !== '0' && preg_match('/\d+/', $agentHint, $am)) {
+        $agentExt = $am[0];
+    } elseif (preg_match('/\/(.*?)\@/', $memberData, $m)) {
         $agentExt = $m[1];
     } elseif (preg_match('/SIP\/(\d+)/i', $memberData, $m)) {
         $agentExt = $m[1];
@@ -62,7 +66,7 @@ try {
         'ANSWERED',
         $bridge->phoneForRequest($mobile, $tel),
         $agentExt !== '' ? $agentExt : null,
-        'agi=137queue;uniqueId=' . $uniqueId
+        'agi=137queue;uniqueId=' . $uniqueId . ($agentExt !== '' ? ';agent=' . $agentExt : '')
     );
 
     $agi->verbose('137queue tracking=' . $result['trackingCode'] . ' requestId=' . $result['requestId']);
