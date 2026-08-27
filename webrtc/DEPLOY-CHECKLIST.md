@@ -33,10 +33,13 @@ dotnet publish src/RequestService.Api/RequestService.Api.csproj -c Release -o /o
 
 # Telephony در appsettings (Development یا Production) باید شامل باشد:
 # DefaultAgentExten=2101
-# WssUrl=wss://192.168.1.70:8089/ws
-# SipDomain=192.168.1.70
+# WssUrl=wss://apiweb-137request.sabzevar.ir:5007/asterisk-wss/ws
+# SipDomain=issabel.local
 # SipUsername=2101
 # SipPassword=همان رمز pjsip 2101
+#
+# nginx: location /asterisk-wss/ را از deploy/nginx.conf اضافه کنید (پروکسی به 192.168.1.70:8089)
+# تا مرورگر مستقیم به IP داخلی WSS نزند (Chrome Private Network Access).
 
 sudo chown -R requestservice:requestservice /opt/requestservice
 sudo systemctl start requestservice
@@ -44,13 +47,16 @@ sudo systemctl start requestservice
 curl -s http://127.0.0.1:5006/api/v1/phone-calls/config -H "X-Api-Key: dev-internal-key-137"
 ```
 
-باید `webrtc.enabled: true` باشد.
+باید `webrtc.enabled: true` و `wssUrl` به `/asterisk-wss/ws` اشاره کند.
 
 ## تست
 
-1. کارتابل را با **HTTPS** باز کنید (نه http://192.168.1.12:5006).
+1. کارتابل را با **HTTPS** باز کنید: `https://apiweb-137request.sabzevar.ir:5007/kartabl/`
 2. اجازه میکروفون بدهید → وضعیت «WebRTC: آماده».
-3. زنگ ۱۳۷ → ۲ → در کارتابل «جواب در کارتابل».
-4. صحبت کنید → قطع → ردیف + صوت در سابقه.
+3. روی ایزابل: `asterisk -rx "pjsip show contacts" | grep 2101` باید contact ببیند.
+4. زنگ ۱۳۷ → ۲ → در کارتابل «جواب در کارتابل».
+5. صحبت کنید → قطع → ردیف + صوت در سابقه.
+
+اگر «قطع از WSS» ماند: F12 → Network → WS؛ یا موقتاً کارتابل را از `https://192.168.1.12:5007/kartabl/` باز کنید.
 
 Fallback: MicroSIP روی 2001 هنوز کار می‌کند اگر لازم شد.

@@ -14,9 +14,12 @@
 ;tlscertfile=/etc/asterisk/keys/asterisk.crt
 ;tlsprivatekey=/etc/asterisk/keys/asterisk.key
 
-; --- rtp.conf (ICE/WebRTC) ---
+; --- rtp.conf (ICE/WebRTC) — بدون این، تماس سیگنال می‌خورد ولی صدا/بوق می‌ماند ---
 ;[general]
 ;rtpstart=10000
 ;rtpend=20000
-;icesupport=true
+;icesupport=yes
 ;stunaddr=stun.l.google.com:19302
+;; اگر ایزابل چند کارت شبکه دارد، آدرس LAN را صریح بگذار:
+;stun_blacklist=0.0.0.0/0
+;; یا در PJSIP endpoint: media_address=192.168.1.70

@@ -19,7 +19,7 @@ method=tlsv1_2
 type=endpoint
 context=from-internal
 disallow=all
-allow=opus,ulaw,alaw
+allow=ulaw,alaw,opus
 auth=2101
 aors=2101
 dtls_auto_generate_cert=yes
@@ -33,7 +33,10 @@ rtp_symmetric=yes
 force_rport=yes
 rewrite_contact=yes
 direct_media=no
-timers=yes
+timers=no
+; مهم: آدرس LAN ایزابل تا ICE کاندید اشتباه (مثلاً 127.0.0.1) ندهد
+media_address=192.168.1.70
+bind_rtp_to_media_address=yes
 ; Optional: restrict to LAN if needed
 ; permit=192.168.0.0/16
 
