@@ -249,26 +249,43 @@ final class Bridge137
         return $this->findMonitorByUniqueId($uniqueId);
     }
 
-    /** Find MixMonitor file containing UNIQUEID under monitor/Y/m/d/. */
+    /** Find MixMonitor file containing UNIQUEID under monitor/ (root + Y/m/d). */
     public function findMonitorByUniqueId(string $uniqueId, ?string $y = null, ?string $m = null, ?string $d = null): ?string
     {
         if ($uniqueId === '') {
             return null;
         }
+        $root = rtrim($this->cfg['monitor_dir'], '/');
         $y = $y ?: date('Y');
         $m = $m ?: date('m');
         $d = $d ?: date('d');
-        $base = rtrim($this->cfg['monitor_dir'], '/') . '/' . $y . '/' . $m . '/' . $d . '/';
-        if (!is_dir($base)) {
-            return null;
-        }
-        $found = null;
-        foreach (glob($base . '*') ?: [] as $file) {
-            if (stripos($file, $uniqueId) !== false) {
-                $found = $file;
+
+        $dirs = [
+            $root,
+            $root . '/' . $y . '/' . $m . '/' . $d,
+        ];
+
+        $best = null;
+        $bestSize = -1;
+        foreach ($dirs as $base) {
+            if (!is_dir($base)) {
+                continue;
+            }
+            foreach (glob($base . '/*' . $uniqueId . '*') ?: [] as $file) {
+                if (!is_file($file)) {
+                    continue;
+                }
+                $size = (int)filesize($file);
+                // Prefer kartabl MixMonitor, then largest wav
+                $bonus = (stripos(basename($file), '137k-') === 0) ? 1000000000 : 0;
+                $score = $size + $bonus;
+                if ($score > $bestSize) {
+                    $bestSize = $score;
+                    $best = $file;
+                }
             }
         }
-        return $found;
+        return $best;
     }
 
     /** @return array{status:int,body:string,json:?array} */

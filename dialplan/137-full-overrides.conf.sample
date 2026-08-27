@@ -1,0 +1,60 @@
+; === 137 overrides: queue hangup submit + kartabl answer record + IVR menu ===
+; Installed by install-137-overrides.py into extensions_override_issabelpbx.conf
+
+; ---------------------------------------------------------------------------
+; Queue 8002: push hangup handler, Queue WITHOUT mid-call AGI
+; (replaces labeled priorities qagi + qcall from FreePBX)
+; ---------------------------------------------------------------------------
+[ext-queues]
+exten => 8002,n(qagi),Set(CHANNEL(hangup_handler_push)=137-hangup-submit,s,1)
+exten => 8002,n(qcall),Queue(8002,${QOPTIONS},${QURL},${QAANNOUNCE},${QMAXWAIT},,,${QGOSUB},${QRULE},${QPOSITION})
+
+; ---------------------------------------------------------------------------
+; Shared hangup handler — runs for queue answer (MicroSIP) and after Redirect
+; ---------------------------------------------------------------------------
+[137-hangup-submit]
+exten => s,1,NoOp(137 hangup-submit agent=${137_AGENT} qs=${QUEUESTATUS} done=${137_SUBMITTED})
+ same => n,GotoIf($["${137_SUBMITTED}"="1"]?done)
+ same => n,Set(137_SUBMITTED=1)
+ same => n,StopMixMonitor()
+ same => n,AGI(137queue.php)
+ same => n(done),Return()
+
+; ---------------------------------------------------------------------------
+; Kartabl Answer: stop queue recording, start new MixMonitor, Dial agent
+; Hangup handler from queue still fires; also local handler as backup
+; ---------------------------------------------------------------------------
+[137-kartabl-answer]
+exten => _X.,1,NoOp(137 kartabl answer agent=${EXTEN} chan=${CHANNEL})
+ same => n,Set(__137_AGENT=${EXTEN})
+ same => n,Set(__137_SUBMITTED=0)
+ same => n,Set(MEMBERINTERFACE=SIP/${EXTEN})
+ same => n,StopMixMonitor()
+ same => n,Set(MONITOR_FILENAME=/var/spool/asterisk/monitor/137k-${UNIQUEID})
+ same => n,MixMonitor(${MONITOR_FILENAME}.wav,b)
+ same => n,Set(CHANNEL(hangup_handler_push)=137-hangup-submit,s,1)
+ same => n,Wait(1)
+ same => n,SIPAddHeader(Call-Info: <sip:${EXTEN}@local>\;answer-after=0)
+ same => n,Dial(SIP/${EXTEN},120,tTrg)
+ same => n,Goto(137-hangup-submit,s,1)
+
+; ---------------------------------------------------------------------------
+; IVR menus: 1=ثبت  2=کارشناس(صف 8002)  3=پیگیری
+; ivr-2 uses same announcement as ivr-1 so spoken text matches buttons again
+; ---------------------------------------------------------------------------
+[ivr-1]
+exten => 1,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
+ same => n(ivrsel-1),Goto(ext-miscdests,1,1)
+exten => 2,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
+ same => n(ivrsel-2),Goto(ext-queues,8002,1)
+exten => 3,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
+ same => n(ivrsel-3),Goto(ext-miscdests,2,1)
+
+[ivr-2]
+exten => s,n(skip),Set(IVR_MSG=custom/ivr1)
+exten => 1,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
+ same => n(ivrsel-1),Goto(ext-miscdests,1,1)
+exten => 2,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
+ same => n(ivrsel-2),Goto(ext-queues,8002,1)
+exten => 3,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
+ same => n(ivrsel-3),Goto(ext-miscdests,2,1)

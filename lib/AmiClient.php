@@ -72,7 +72,7 @@ class AmiClient
 
         $fp = $this->connectAndLogin();
         try {
-            // Drop the queue's ringing legs to this agent so Dial is not BUSY.
+            // Only kill Local/from-queue legs (not SIP/2001 itself — safer).
             $chanLines = $this->cliOn($fp, 'core show channels concise');
             foreach ($chanLines as $line) {
                 $line = preg_replace('/^Output:\s?/i', '', $line);
@@ -80,10 +80,7 @@ class AmiClient
                 if ($name === false || $name === '') {
                     continue;
                 }
-                if (stripos($name, 'Local/' . $exten . '@from-queue') === 0
-                    || stripos($name, 'SIP/' . $exten . '-') === 0
-                    || stripos($name, 'SIP/' . $exten . '/') === 0) {
-                    // Never hang up the citizen trunk leg.
+                if (stripos($name, 'Local/' . $exten . '@from-queue') === 0) {
                     if (strcasecmp($name, $callerChannel) === 0) {
                         continue;
                     }
