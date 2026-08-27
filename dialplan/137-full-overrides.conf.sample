@@ -10,10 +10,13 @@ exten => 8002,n(qagi),Set(CHANNEL(hangup_handler_push)=137-hangup-submit,s,1)
 exten => 8002,n(qcall),Queue(8002,${QOPTIONS},${QURL},${QAANNOUNCE},${QMAXWAIT},,,${QGOSUB},${QRULE},${QPOSITION})
 
 ; ---------------------------------------------------------------------------
-; Shared hangup handler — runs for queue answer (MicroSIP) and after Redirect
+; Shared submit — hangup handler entry (Return) + runnable gosub body
 ; ---------------------------------------------------------------------------
 [137-hangup-submit]
-exten => s,1,NoOp(137 hangup-submit agent=${137_AGENT} qs=${QUEUESTATUS} done=${137_SUBMITTED})
+exten => s,1,Gosub(137-hangup-submit,run,1)
+ same => n,Return()
+
+exten => run,1,NoOp(137 hangup-submit agent=${137_AGENT} qs=${QUEUESTATUS} done=${137_SUBMITTED})
  same => n,GotoIf($["${137_SUBMITTED}"="1"]?done)
  same => n,Set(137_SUBMITTED=1)
  same => n,StopMixMonitor()
@@ -21,8 +24,7 @@ exten => s,1,NoOp(137 hangup-submit agent=${137_AGENT} qs=${QUEUESTATUS} done=${
  same => n(done),Return()
 
 ; ---------------------------------------------------------------------------
-; Kartabl Answer: stop queue recording, start new MixMonitor, Dial agent
-; Hangup handler from queue still fires; also local handler as backup
+; Kartabl Answer: new MixMonitor for agent talk, then Dial
 ; ---------------------------------------------------------------------------
 [137-kartabl-answer]
 exten => _X.,1,NoOp(137 kartabl answer agent=${EXTEN} chan=${CHANNEL})
@@ -36,11 +38,11 @@ exten => _X.,1,NoOp(137 kartabl answer agent=${EXTEN} chan=${CHANNEL})
  same => n,Wait(1)
  same => n,SIPAddHeader(Call-Info: <sip:${EXTEN}@local>\;answer-after=0)
  same => n,Dial(SIP/${EXTEN},120,tTrg)
- same => n,Goto(137-hangup-submit,s,1)
+ same => n,Gosub(137-hangup-submit,run,1)
+ same => n,Hangup()
 
 ; ---------------------------------------------------------------------------
-; IVR menus: 1=ثبت  2=کارشناس(صف 8002)  3=پیگیری
-; ivr-2 uses same announcement as ivr-1 so spoken text matches buttons again
+; IVR: 1=ثبت  2=کارشناس  3=پیگیری   (ivr-2 speaks custom/ivr1 like daytime menu)
 ; ---------------------------------------------------------------------------
 [ivr-1]
 exten => 1,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
