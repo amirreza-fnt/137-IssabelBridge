@@ -165,17 +165,19 @@ class AmiClient
 
         foreach ($queueLines as $line) {
             $line = preg_replace('/^Output:\s?/i', '', $line);
-            if (stripos($line, 'Members:') !== false) {
+            $trim = trim($line);
+            // دقیق — "Callers waiting:" نباید بخش Callers را باز کند
+            if (preg_match('/^Members:\s*$/i', $trim)) {
                 $inMembers = true;
                 $inCallers = false;
                 continue;
             }
-            if (stripos($line, 'Callers:') !== false) {
+            if (preg_match('/^Callers:\s*$/i', $trim)) {
                 $inMembers = false;
                 $inCallers = true;
                 continue;
             }
-            if (stripos($line, 'No Callers') !== false) {
+            if (preg_match('/^No Callers/i', $trim)) {
                 $inMembers = false;
                 $inCallers = false;
                 continue;
@@ -202,15 +204,9 @@ class AmiClient
                     'raw'    => trim($line),
                 );
             }
-            if ($inCallers && preg_match('/(SIP\/[^\s]+|PJSIP\/[^\s]+|Local\/[^\s]+|DAHDI\/[^\s]+|IAX2\/[^\s]+)/', $line, $m)) {
-                $callers[] = array(
-                    'channel' => $m[1],
-                    'raw'     => trim($line),
-                );
-            } elseif ($inCallers && preg_match('/^\s*\d+\.\s+(\S+)/', $line, $m)) {
-                // fallback: "1. Something/..." when tech prefix was missed
-                $chan = $m[1];
-                if (strpos($chan, '/') !== false) {
+            if ($inCallers) {
+                $chan = self::parseQueueCallerChannel($line);
+                if ($chan !== '') {
                     $callers[] = array(
                         'channel' => $chan,
                         'raw'     => trim($line),
@@ -218,6 +214,21 @@ class AmiClient
                 }
             }
         }
+
+        // اگر Callers: پارس نشد ولی تماس در صف هست → از channels concise
+        if ($callers === array()) {
+            foreach ($queueLines as $line) {
+                if (preg_match('/has\s+([1-9]\d*)\s+calls/i', $line, $m)) {
+                    $callers = self::callersFromChannelsConcise($queue);
+                    break;
+                }
+            }
+        }
+
+        // فقط ردیف‌های با channel معتبر
+        $callers = array_values(array_filter($callers, static function ($c) {
+            return !empty($c['channel']);
+        }));
 
         $peers = array();
         foreach ($peerLines as $line) {
@@ -250,6 +261,63 @@ class AmiClient
             'peers'         => $peers,
             'source'        => $via,
         );
+    }
+
+    /** @param string $line */
+    private static function parseQueueCallerChannel($line)
+    {
+        $line = trim($line);
+        if ($line === '') {
+            return '';
+        }
+        // "1. Local/8002@from-queue-0000002;2 (wait: ..."
+        if (preg_match('/^\d+\.\s+(\S+)/', $line, $m)) {
+            $chan = rtrim($m[1], ',');
+            if (strpos($chan, '/') !== false) {
+                return $chan;
+            }
+        }
+        if (preg_match('/(SIP\/[^\s,)]+|PJSIP\/[^\s,)]+|Local\/[^\s,)]+|DAHDI\/[^\s,)]+|IAX2\/[^\s,)]+)/', $line, $m)) {
+            return $m[1];
+        }
+        return '';
+    }
+
+    /** @param string $queue @return array<int, array{channel:string, raw:string}> */
+    private static function callersFromChannelsConcise($queue)
+    {
+        $bin = trim((string)shell_exec('command -v asterisk 2>/dev/null'));
+        if ($bin === '') {
+            $bin = '/usr/sbin/asterisk';
+        }
+        if (!is_executable($bin)) {
+            return array();
+        }
+        $out = array();
+        $code = 0;
+        exec(escapeshellcmd($bin) . ' -rx ' . escapeshellarg('core show channels concise') . ' 2>/dev/null', $out, $code);
+        if ($code !== 0) {
+            return array();
+        }
+        $callers = array();
+        foreach ($out as $line) {
+            $parts = explode('!', $line);
+            $chan = isset($parts[0]) ? trim($parts[0]) : '';
+            if ($chan === '') {
+                continue;
+            }
+            $ctx = isset($parts[1]) ? $parts[1] : '';
+            // تماس منتظر صف: Local/QUEUE@from-queue یا context مربوط به صف
+            if (preg_match('/Local\/' . preg_quote($queue, '/') . '@from-queue/i', $chan)
+                || stripos($ctx, 'ext-queues') !== false
+                || preg_match('/@from-queue/i', $chan)) {
+                $callers[] = array(
+                    'channel' => $chan,
+                    'raw'     => 'concise:' . $line,
+                );
+            }
+        }
+        return $callers;
     }
 
     /** @param resource $fp @param string $command @return string[] */
