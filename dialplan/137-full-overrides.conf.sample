@@ -25,6 +25,17 @@ exten => run,1,NoOp(137 hangup-submit agent=${137_AGENT} qs=${QUEUESTATUS} done=
  same => n(done),Return()
 
 ; ---------------------------------------------------------------------------
+; Citizen recording (138/140): auto-submit on hangup; * still plays tracking code
+; ---------------------------------------------------------------------------
+[137-record-hangup]
+exten => s,1,NoOp(137 record hangup uid=${UNIQUEID} done=${137_SUBMITTED} tmp=${137_RECORD_TMP})
+ same => n,GotoIf($["${137_SUBMITTED}"="1"]?done)
+ same => n,GotoIf($["${137_RECORD_TMP}"=""]?done)
+ same => n,Set(137_SUBMITTED=1)
+ same => n,System(/usr/bin/php -q /var/lib/asterisk/agi-bin/137-on-record-hangup.php ${UNIQUEID} ${CALLERID(num)} ${137_RECORD_TMP} &)
+ same => n(done),Return()
+
+; ---------------------------------------------------------------------------
 [137-kartabl-answer]
 exten => _X.,1,NoOp(137 kartabl answer agent=${EXTEN} chan=${CHANNEL})
  same => n,Set(__137_AGENT=${EXTEN})
@@ -58,7 +69,7 @@ exten => 3,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
  same => n(ivrsel-3),Goto(ext-miscdests,2,1)
 
 [ivr-2]
-exten => s,n(skip),Set(IVR_MSG=custom/ivr1)
+exten => s,n(skip),Set(IVR_MSG=custom/ivr2)
 exten => 1,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})
  same => n(ivrsel-1),Goto(ext-miscdests,1,1)
 exten => 2,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})

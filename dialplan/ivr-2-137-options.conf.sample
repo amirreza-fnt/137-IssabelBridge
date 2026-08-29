@@ -3,8 +3,9 @@
 ;  2 = ارتباط با کارشناس (queue 8002)
 ;  3 = پیگیری (139)
 ;
-; Append to extensions_override_issabelpbx.conf then: asterisk -rx "dialplan reload"
-; Also re-record System Recording custom/ivr2 with the new wording.
+; IMPORTANT: 137-full-overrides sets IVR_MSG=custom/ivr2 (NOT ivr1).
+; Re-record in Issabel: Admin → System Recordings → custom/ivr2
+;   "برای ثبت درخواست یک، ارتباط با کارشناس دو، پیگیری سه"
 
 [ivr-2]
 exten => 1,1,Set(__IVR_DIGIT_PRESSED=${EXTEN})

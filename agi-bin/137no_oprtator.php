@@ -2,10 +2,16 @@
 <?php
 /**
  * Exten 140 — no operator available: record voicemail → 137-request (NO_ANSWER).
- * Replaces old SOAP AddVoiceMessageWithSend2 path.
+ * * = submit + tracking TTS; hangup = auto-submit via 137-on-record-hangup.php
  */
 require 'phpagi.php';
 require_once __DIR__ . '/137_bridge.php';
+
+function recordLockPath($uniqueId)
+{
+    $id = preg_replace('/\W+/', '', (string)$uniqueId);
+    return '/tmp/137-submitted-' . ($id !== '' ? $id : 'unknown') . '.flag';
+}
 
 $agi = new AGI();
 error_reporting(E_ALL);
@@ -16,6 +22,8 @@ try {
 
     $cid = $agi->get_variable('CALLERID(num)');
     $caller = isset($cid['data']) ? (string)$cid['data'] : '';
+    $uidVar = $agi->get_variable('UNIQUEID');
+    $uniqueId = isset($uidVar['data']) ? (string)$uidVar['data'] : '';
     list($mobile, $tel) = $bridge->callerParts($caller);
     $agi->verbose('137no_oprtator caller=' . $caller);
 
@@ -25,10 +33,19 @@ try {
     $fullFileName = $fName . '.WAV';
     $fulldecodeName = '/tmp/' . $decodeName . '.wav';
 
+    $agi->set_variable('__137_SUBMITTED', '0');
+    $agi->set_variable('__137_RECORD_TMP', $fName);
+    $agi->exec('Set', 'CHANNEL(hangup_handler_push)=137-record-hangup,s,1');
+
     $agi->record_file($fName, 'WAV', '*', -1, null, true, null);
 
-    if (!file_exists($fullFileName)) {
-        $agi->verbose('137no_oprtator: record missing');
+    if ($uniqueId !== '' && is_file(recordLockPath($uniqueId))) {
+        $agi->verbose('137no_oprtator: already submitted on hangup');
+        exit(0);
+    }
+
+    if (!file_exists($fullFileName) || filesize($fullFileName) < 800) {
+        $agi->verbose('137no_oprtator: record missing or too small');
         $agi->stream_file('137/end');
         exit(1);
     }
@@ -44,7 +61,11 @@ try {
     );
 
     $agi->verbose('137no_oprtator tracking=' . $result['trackingCode']);
+    $agi->set_variable('137_SUBMITTED', '1');
     $agi->set_variable('TRACKING_CODE', $result['trackingCode']);
+    if ($uniqueId !== '') {
+        @touch(recordLockPath($uniqueId));
+    }
 
     $agi->stream_file('137/code');
     $agi->say_digits($bridge->digitsForTts($result['trackingCode']), '1234567');

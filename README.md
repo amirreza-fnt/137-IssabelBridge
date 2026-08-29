@@ -22,6 +22,10 @@ SOAP قدیمی: `http://192.168.1.42:8090/service/asterisk/asterisk.asmx`
 3. `POST /api/v1/requests` کانال `PhoneCall` → **`trackingCode`**  
 4. پخش کد با `say_digits` (مسیر ویس‌میل)
 
+**ثبت درخواست (138):** با **قطع تماس** هم درخواست ثبت می‌شود (`137-on-record-hangup.php`). فقط با زدن **`*`** کد پیگیری پخش می‌شود.
+
+**IVR صوتی:** منوی ۳ گزینه‌ای باید فایل `custom/ivr2` باشد (۱ ثبت، ۲ کارشناس، ۳ پیگیری). override قبلی اشتباه `custom/ivr1` (۲ گزینه) پخش می‌کرد.
+
 **مهم:** `137queue.php` را به‌عنوان آرگومان AGI داخل `Queue()` نگذارید (آن لحظه «جواب» است و فایل ناقص آپلود می‌شود). بعد از برگشت از `Queue()` وقتی `QUEUESTATUS` خالی است اجرا شود — نمونه: `dialplan/queue-8002-hangup-agi.conf.sample`.
 
 ## HTTP API برای کارتابل (روی ایزابل)
@@ -62,6 +66,7 @@ cd 137-IssabelBridge
 
 sudo cp /var/lib/asterisk/agi-bin/137*.php /var/lib/asterisk/agi-bin/bak.$(date +%Y%m%d)/ 2>/dev/null || true
 sudo cp agi-bin/137_bridge.php agi-bin/137record.php agi-bin/137no_oprtator.php \
+  agi-bin/137-on-record-hangup.php agi-bin/137-on-record-end.php agi-bin/137queue.php \
         agi-bin/137queue.php agi-bin/137_Pay.php \
         /var/lib/asterisk/agi-bin/
 

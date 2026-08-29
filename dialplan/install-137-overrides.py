@@ -57,7 +57,7 @@ def main():
         "",
         cur,
     )
-    for ctx in ("137-kartabl-answer", "137-hangup-submit", "137-q-hangup"):
+    for ctx in ("137-kartabl-answer", "137-hangup-submit", "137-q-hangup", "137-record-hangup"):
         cur = re.sub(r"(?ms)^\[%s\][^\[]*" % re.escape(ctx), "", cur)
 
     # Ensure [ext-queues] exists in override so replacements stick
