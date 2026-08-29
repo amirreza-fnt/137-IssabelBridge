@@ -38,6 +38,10 @@ class AmiClient
 
     public function hangup($channel)
     {
+        $channel = trim((string)$channel);
+        if ($this->shellRun('channel request hangup ' . $channel)) {
+            return array('Response: Success', 'Via: shell');
+        }
         return $this->send(array(
             'Action'  => 'Hangup',
             'Channel' => $channel,
@@ -68,6 +72,16 @@ class AmiClient
         $exten = preg_replace('/\D+/', '', (string)$exten);
         if ($exten === '') {
             throw new RuntimeException('agent exten required');
+        }
+
+        $callerChannel = trim((string)$callerChannel);
+        if ($callerChannel === '') {
+            throw new RuntimeException('caller channel required');
+        }
+
+        // Fast path: asterisk -rx (~200ms). AMI Command can take 8–10s on Issabel.
+        if ($this->answerAsAgentShell($callerChannel, $exten)) {
+            return array('Response: Success', 'Via: shell');
         }
 
         $fp = $this->connectAndLogin();
@@ -328,6 +342,44 @@ class AmiClient
             'Command' => $command,
         ));
         return $this->readCommandOutput($fp);
+    }
+
+    /** @param string $callerChannel @param string $exten */
+    private function answerAsAgentShell($callerChannel, $exten)
+    {
+        $concise = $this->shellCli('core show channels concise');
+        if ($concise === array()) {
+            return false;
+        }
+        foreach ($concise as $line) {
+            $name = strtok($line, '!');
+            if ($name === false || $name === '') {
+                continue;
+            }
+            if (stripos($name, 'Local/' . $exten . '@from-queue') === 0
+                && strcasecmp($name, $callerChannel) !== 0) {
+                $this->shellRun('channel request hangup ' . $name);
+            }
+        }
+        return $this->shellRun(
+            'channel redirect ' . $callerChannel . ' 137-kartabl-answer,' . $exten . ',1'
+        );
+    }
+
+    /** @param string $command */
+    private function shellRun($command)
+    {
+        $bin = trim((string)shell_exec('command -v asterisk 2>/dev/null'));
+        if ($bin === '') {
+            $bin = '/usr/sbin/asterisk';
+        }
+        if (!is_executable($bin)) {
+            return false;
+        }
+        $out = array();
+        $code = 0;
+        exec(escapeshellcmd($bin) . ' -rx ' . escapeshellarg($command) . ' 2>/dev/null', $out, $code);
+        return $code === 0;
     }
 
     /** @param string $command @return string[] */
