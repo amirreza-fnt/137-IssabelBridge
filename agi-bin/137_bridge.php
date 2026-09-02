@@ -198,10 +198,14 @@ final class Bridge137
         ];
     }
 
-    /** Digits only for Asterisk say_digits (from trackingCode like 137-14050525-000001). */
+    /** Last 4 digits for Asterisk say_digits (trackingCode like 137-14050525-000019 → 0019). */
     public function digitsForTts(string $trackingCode): string
     {
-        return preg_replace('/\D+/', '', $trackingCode) ?: '0';
+        $digits = preg_replace('/\D+/', '', $trackingCode) ?: '0';
+        if (strlen($digits) > 4) {
+            $digits = substr($digits, -4);
+        }
+        return $digits;
     }
 
     /**
